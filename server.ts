@@ -59,111 +59,143 @@ const DEFAULT_SETTINGS: CreatorSettings = {
   notificationEmail: "castromassimo@gmail.com"
 };
 
-async function readSettings(): Promise<CreatorSettings> {
-  try {
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (token && !token.startsWith("vercel_blob_rw_...")) {
-      const { blobs } = await list({ prefix: "db/settings.json", token });
-      const dbBlob = blobs.find(b => b.pathname === "db/settings.json");
-      if (dbBlob) {
-        const response = await fetch(dbBlob.url);
-        if (response.ok) {
-          const parsed = await response.json();
-          return { ...DEFAULT_SETTINGS, ...parsed };
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Error reading settings from Vercel Blob:", err);
+// ─── Safe JSON fetch from Vercel Blob ────────────────────────────────────────
+// Reads text first to avoid unhandled SyntaxError from response.json() when
+// the CDN returns HTML (e.g. error pages or redirects instead of the payload).
+async function safeBlobFetch<T>(url: string): Promise<T | null> {
+  const response = await fetch(url, { headers: { "Cache-Control": "no-cache, no-store" } });
+  if (!response.ok) {
+    console.error(`[Blob-Fetch] HTTP ${response.status} for ${url}`);
+    return null;
   }
-
+  const text = await response.text();
   try {
-    if (!fs.existsSync(SETTINGS_FILE)) {
-      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(DEFAULT_SETTINGS, null, 2), "utf-8");
-      return DEFAULT_SETTINGS;
-    }
-    const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
-    const parsed = JSON.parse(data);
-    return { ...DEFAULT_SETTINGS, ...parsed };
-  } catch (error) {
-    console.error("Error reading settings file:", error);
-    return DEFAULT_SETTINGS;
+    return JSON.parse(text) as T;
+  } catch {
+    console.error(`[Blob-Fetch] JSON parse failed for ${url}. Response starts with: ${text.slice(0, 120)}`);
+    return null;
   }
 }
 
-async function writeSettings(settings: CreatorSettings) {
-  const dataStr = JSON.stringify(settings, null, 2);
-  try {
-    fs.writeFileSync(SETTINGS_FILE, dataStr, "utf-8");
-  } catch (error) {
-    console.warn("Could not write settings file locally:", error);
-  }
+async function readSettings(): Promise<CreatorSettings> {
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const hasBlob = !!(token && !token.startsWith("vercel_blob_rw_..."));
 
-  try {
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (token && !token.startsWith("vercel_blob_rw_...")) {
-      await put("db/settings.json", dataStr, {
-        access: "public",
-        addRandomSuffix: false,
-        token
-      });
-      console.log("[Blob-DB] Settings salvati con successo su Vercel Blob.");
+  if (IS_VERCEL) {
+    if (!hasBlob) {
+      console.warn("[ReadSettings] BLOB_READ_WRITE_TOKEN non configurato su Vercel. Usando defaults.");
+      return DEFAULT_SETTINGS;
     }
-  } catch (err) {
-    console.error("Error writing settings to Vercel Blob:", err);
+    try {
+      const { blobs } = await list({ prefix: "db/settings.json", token: token! });
+      const dbBlob = blobs.find(b => b.pathname === "db/settings.json");
+      if (!dbBlob) return DEFAULT_SETTINGS;
+      const parsed = await safeBlobFetch<CreatorSettings>(dbBlob.url);
+      return parsed ? { ...DEFAULT_SETTINGS, ...parsed } : DEFAULT_SETTINGS;
+    } catch (err) {
+      console.error("[ReadSettings] Errore Blob:", err);
+      return DEFAULT_SETTINGS;
+    }
+  } else {
+    try {
+      if (!fs.existsSync(SETTINGS_FILE)) {
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(DEFAULT_SETTINGS, null, 2), "utf-8");
+        return DEFAULT_SETTINGS;
+      }
+      const parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf-8"));
+      return { ...DEFAULT_SETTINGS, ...parsed };
+    } catch (error) {
+      console.error("[ReadSettings] Errore file locale:", error);
+      return DEFAULT_SETTINGS;
+    }
+  }
+}
+
+async function writeSettings(settings: CreatorSettings): Promise<boolean> {
+  const dataStr = JSON.stringify(settings, null, 2);
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const hasBlob = !!(token && !token.startsWith("vercel_blob_rw_..."));
+
+  if (IS_VERCEL) {
+    if (!hasBlob) return false;
+    try {
+      await put("db/settings.json", dataStr, { access: "public", allowOverwrite: true, token: token! });
+      console.log("[WriteSettings] Settings salvati su Vercel Blob.");
+      return true;
+    } catch (err) {
+      console.error("[WriteSettings] Errore scrittura Blob:", err);
+      return false;
+    }
+  } else {
+    try {
+      fs.writeFileSync(SETTINGS_FILE, dataStr, "utf-8");
+    } catch (error) {
+      console.warn("[WriteSettings] Errore scrittura file locale:", error);
+    }
+    if (hasBlob) {
+      put("db/settings.json", dataStr, { access: "public", allowOverwrite: true, token: token! })
+        .catch(err => console.warn("[WriteSettings] Sync Blob fallito (non critico):", err));
+    }
+    return true;
   }
 }
 
 async function readBookings(): Promise<Booking[]> {
-  try {
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (token && !token.startsWith("vercel_blob_rw_...")) {
-      const { blobs } = await list({ prefix: "db/bookings.json", token });
-      const dbBlob = blobs.find(b => b.pathname === "db/bookings.json");
-      if (dbBlob) {
-        const response = await fetch(dbBlob.url);
-        if (response.ok) {
-          return await response.json();
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Error reading bookings from Vercel Blob:", err);
-  }
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const hasBlob = !!(token && !token.startsWith("vercel_blob_rw_..."));
 
-  try {
-    if (!fs.existsSync(BOOKINGS_FILE)) {
-      fs.writeFileSync(BOOKINGS_FILE, JSON.stringify([], null, 2), "utf-8");
+  if (IS_VERCEL) {
+    if (!hasBlob) return [];
+    try {
+      const { blobs } = await list({ prefix: "db/bookings.json", token: token! });
+      const dbBlob = blobs.find(b => b.pathname === "db/bookings.json");
+      if (!dbBlob) return [];
+      const parsed = await safeBlobFetch<Booking[]>(dbBlob.url);
+      return parsed ?? [];
+    } catch (err) {
+      console.error("[ReadBookings] Errore Blob:", err);
       return [];
     }
-    const data = fs.readFileSync(BOOKINGS_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch (error) {
-    console.error("Error reading bookings file:", error);
-    return [];
+  } else {
+    try {
+      if (!fs.existsSync(BOOKINGS_FILE)) {
+        fs.writeFileSync(BOOKINGS_FILE, JSON.stringify([], null, 2), "utf-8");
+        return [];
+      }
+      return JSON.parse(fs.readFileSync(BOOKINGS_FILE, "utf-8"));
+    } catch (error) {
+      console.error("[ReadBookings] Errore file locale:", error);
+      return [];
+    }
   }
 }
 
-async function writeBookings(bookings: Booking[]) {
+async function writeBookings(bookings: Booking[]): Promise<boolean> {
   const dataStr = JSON.stringify(bookings, null, 2);
-  try {
-    fs.writeFileSync(BOOKINGS_FILE, dataStr, "utf-8");
-  } catch (error) {
-    console.warn("Could not write bookings file locally:", error);
-  }
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const hasBlob = !!(token && !token.startsWith("vercel_blob_rw_..."));
 
-  try {
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (token && !token.startsWith("vercel_blob_rw_...")) {
-      await put("db/bookings.json", dataStr, {
-        access: "public",
-        addRandomSuffix: false,
-        token
-      });
-      console.log("[Blob-DB] Bookings salvati con successo su Vercel Blob.");
+  if (IS_VERCEL) {
+    if (!hasBlob) return false;
+    try {
+      await put("db/bookings.json", dataStr, { access: "public", allowOverwrite: true, token: token! });
+      console.log("[WriteBookings] Bookings salvati su Vercel Blob.");
+      return true;
+    } catch (err) {
+      console.error("[WriteBookings] Errore scrittura Blob:", err);
+      return false;
     }
-  } catch (err) {
-    console.error("Error writing bookings to Vercel Blob:", err);
+  } else {
+    try {
+      fs.writeFileSync(BOOKINGS_FILE, dataStr, "utf-8");
+    } catch (error) {
+      console.warn("[WriteBookings] Errore scrittura file locale:", error);
+    }
+    if (hasBlob) {
+      put("db/bookings.json", dataStr, { access: "public", allowOverwrite: true, token: token! })
+        .catch(err => console.warn("[WriteBookings] Sync Blob fallito (non critico):", err));
+    }
+    return true;
   }
 }
 
@@ -266,68 +298,96 @@ const INITIAL_POSTS: VisualStreamPost[] = [
   }
 ];
 
-// Helper to read posts from Vercel Blob (or fallback to local file)
-async function readPosts(): Promise<VisualStreamPost[]> {
-  try {
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (token && !token.startsWith("vercel_blob_rw_...")) {
-      const { blobs } = await list({ prefix: "db/posts.json", token });
-      const dbBlob = blobs.find(b => b.pathname === "db/posts.json");
-      if (dbBlob) {
-        const response = await fetch(dbBlob.url);
-        if (response.ok) {
-          return await response.json();
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Error reading posts from Vercel Blob, falling back to local:", err);
-  }
+// ─── Storage helpers ─────────────────────────────────────────────────────────
+// On Vercel (serverless): Blob is the ONLY persistent storage — file system is read-only.
+// On localhost (dev):     Local file is primary; Blob is synced as backup/preview.
+// This separation avoids CDN stale-read bugs when using Blob as a DB on localhost.
 
-  try {
-    if (!fs.existsSync(POSTS_FILE)) {
-      fs.writeFileSync(POSTS_FILE, JSON.stringify(INITIAL_POSTS, null, 2), "utf-8");
+const IS_VERCEL = !!process.env.VERCEL;
+
+async function readPosts(): Promise<VisualStreamPost[]> {
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const hasBlob = !!(token && !token.startsWith("vercel_blob_rw_..."));
+
+  if (IS_VERCEL) {
+    // === VERCEL: Blob is the only storage ===
+    if (!hasBlob) {
+      console.error("[ReadPosts] BLOB_READ_WRITE_TOKEN non configurato su Vercel!");
+      return [];
+    }
+    try {
+      const { blobs } = await list({ prefix: "db/posts.json", token: token! });
+      const dbBlob = blobs.find(b => b.pathname === "db/posts.json");
+      if (!dbBlob) {
+        console.log("[ReadPosts] db/posts.json non trovato nel Blob. DB vuoto.");
+        return [];
+      }
+      const response = await fetch(dbBlob.url, { headers: { "Cache-Control": "no-cache, no-store" } });
+      if (!response.ok) throw new Error(`Blob fetch failed: ${response.status}`);
+      const data = await response.json();
+      console.log(`[ReadPosts] ${data.length} post letti da Vercel Blob.`);
+      return data;
+    } catch (err) {
+      console.error("[ReadPosts] Errore lettura Blob:", err);
+      return [];
+    }
+  } else {
+    // === LOCALHOST: File locale è la sorgente primaria ===
+    try {
+      if (!fs.existsSync(POSTS_FILE)) {
+        // Prima esecuzione locale: inizializza con post demo
+        fs.writeFileSync(POSTS_FILE, JSON.stringify(INITIAL_POSTS, null, 2), "utf-8");
+        console.log("[ReadPosts] posts.json creato con post demo iniziali.");
+        return INITIAL_POSTS;
+      }
+      const data = fs.readFileSync(POSTS_FILE, "utf-8");
+      const posts = JSON.parse(data);
+      console.log(`[ReadPosts] ${posts.length} post letti da file locale.`);
+      return posts;
+    } catch (error) {
+      console.error("[ReadPosts] Errore lettura file locale:", error);
       return INITIAL_POSTS;
     }
-    const data = fs.readFileSync(POSTS_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch (error) {
-    console.error("Error reading posts file:", error);
-    return INITIAL_POSTS;
   }
 }
 
 async function writePosts(posts: VisualStreamPost[]): Promise<boolean> {
   const dataStr = JSON.stringify(posts, null, 2);
-  let localOk = false;
-  let blobOk = false;
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const hasBlob = !!(token && !token.startsWith("vercel_blob_rw_..."));
 
-  try {
-    fs.writeFileSync(POSTS_FILE, dataStr, "utf-8");
-    localOk = true;
-  } catch (error) {
-    console.warn("Could not write posts file locally (expected on Vercel serverless):", error);
-  }
-
-  try {
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (token && !token.startsWith("vercel_blob_rw_...")) {
-      await put("db/posts.json", dataStr, {
-        access: "public",
-        addRandomSuffix: false, // overwrite
-        token
-      });
-      console.log("[Blob-DB] Posts salvati con successo su Vercel Blob.");
-      blobOk = true;
-    } else {
-      // No valid Blob token — local file is the only storage
-      blobOk = localOk;
+  if (IS_VERCEL) {
+    // === VERCEL: DEVE scrivere su Blob, altrimenti fallisce ===
+    if (!hasBlob) {
+      console.error("[WritePosts] BLOB_READ_WRITE_TOKEN mancante! Impossibile salvare.");
+      return false;
     }
-  } catch (err) {
-    console.error("Error writing posts to Vercel Blob:", err);
+    try {
+      await put("db/posts.json", dataStr, { access: "public", allowOverwrite: true, token: token! });
+      console.log(`[WritePosts] ${posts.length} post salvati su Vercel Blob.`);
+      return true;
+    } catch (err) {
+      console.error("[WritePosts] Errore scrittura Blob:", err);
+      return false;
+    }
+  } else {
+    // === LOCALHOST: scrive su file locale (fonte di verità), Blob opzionale ===
+    let localOk = false;
+    try {
+      fs.writeFileSync(POSTS_FILE, dataStr, "utf-8");
+      localOk = true;
+      console.log(`[WritePosts] ${posts.length} post salvati in posts.json locale.`);
+    } catch (error) {
+      console.error("[WritePosts] Errore scrittura file locale:", error);
+    }
+    // Sync asincrono a Blob (non bloccante, non critico in locale)
+    if (hasBlob) {
+      put("db/posts.json", dataStr, { access: "public", allowOverwrite: true, token: token! })
+        .then(() => console.log("[WritePosts] Sync Blob completato."))
+        .catch(err => console.warn("[WritePosts] Sync Blob fallito (non critico in locale):", err));
+    }
+    return localOk;
   }
-
-  return localOk || blobOk;
 }
 
 
@@ -468,6 +528,45 @@ app.post("/api/upload", async (req, res) => {
   } catch (err: any) {
     console.error("[Upload] Errore durante il caricamento su Vercel Blob:", err);
     res.status(500).json({ error: "Errore durante il caricamento del file: " + err.message });
+  }
+});
+
+// API: Debug endpoint — shows env status and blob list (safe, no secrets exposed)
+app.get("/api/debug", async (req, res) => {
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const hasToken = !!(token && !token.startsWith("vercel_blob_rw_..."));
+  let blobList: string[] = [];
+  let blobError = null;
+  if (hasToken) {
+    try {
+      const { blobs } = await list({ token: token! });
+      blobList = blobs.map(b => b.pathname);
+    } catch (e: any) {
+      blobError = e.message;
+    }
+  }
+  res.json({
+    isVercel: !!process.env.VERCEL,
+    hasToken,
+    tokenPrefix: token ? token.substring(0, 25) + "..." : "(none)",
+    blobFiles: blobList,
+    blobError,
+    nodeEnv: process.env.NODE_ENV
+  });
+});
+
+// API: Clear all demo/seeded posts and reset the DB to empty
+// IMPORTANT: declared BEFORE /:id routes
+app.post("/api/posts/clear-demo", async (req, res) => {
+  try {
+    const saved = await writePosts([]);
+    if (!saved) {
+      return res.status(500).json({ error: "Impossibile svuotare il DB. Verificare BLOB_READ_WRITE_TOKEN." });
+    }
+    console.log("[ClearDemo] DB post azzerato con successo.");
+    res.json({ success: true, message: "Tutti i post demo eliminati. DB azzerato." });
+  } catch (err: any) {
+    res.status(500).json({ error: "Errore: " + err.message });
   }
 });
 

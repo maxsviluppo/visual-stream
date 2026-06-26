@@ -4,7 +4,7 @@ import { getPostDefaultName, formatBookingDateOnly, getBookingDayKey, formatBook
 import { 
   Lock, ArrowLeft, Plus, Trash2, Edit2, BarChart2, MessageSquare, 
   Settings as SettingsIcon, Sparkles, Check, Copy, Calendar, 
-  Eye, RefreshCw, Smartphone, DollarSign, Clock, Play
+  Eye, RefreshCw, Smartphone, DollarSign, Clock, Play, AlertTriangle, X, AlertCircle
 } from "lucide-react";
 
 interface CreatorStudioProps {
@@ -23,6 +23,26 @@ export default function CreatorStudio({
   const [pin, setPin] = useState<string>("");
   const [pinError, setPinError] = useState<string>("");
   const correctPin = "1234";
+
+  // Custom confirm/alert modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    variant: "danger" | "warning" | "info";
+    onConfirm: () => void;
+  } | null>(null);
+
+  const showConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    variant: "danger" | "warning" | "info" = "danger"
+  ) => {
+    setConfirmModal({ open: true, title, message, variant, onConfirm });
+  };
+
+  const closeConfirm = () => setConfirmModal(null);
 
   // Navigation State inside Creator Studio
   const [activeTab, setActiveTab] = useState<"dashboard" | "add-post" | "bookings" | "settings">("dashboard");
@@ -188,18 +208,24 @@ export default function CreatorStudio({
 
   // Delete a booking
   const handleDeleteBooking = async (id: string) => {
-    if (!confirm("Sei sicuro di voler eliminare questa prenotazione?")) return;
-    try {
-      const res = await fetch(`/api/bookings/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setBookings(bookings.filter(b => b.id !== id));
-      } else {
-        alert("Errore nell'eliminazione della prenotazione.");
+    showConfirm(
+      "Elimina Prenotazione",
+      "Sei sicuro di voler eliminare questa prenotazione? L'operazione non può essere annullata.",
+      async () => {
+        closeConfirm();
+        try {
+          const res = await fetch(`/api/bookings/${id}`, { method: "DELETE" });
+          if (res.ok) {
+            setBookings(bookings.filter(b => b.id !== id));
+          } else {
+            showConfirm("Errore", "Errore nell'eliminazione della prenotazione.", () => closeConfirm(), "warning");
+          }
+        } catch (e) {
+          console.error(e);
+          showConfirm("Errore di rete", "Impossibile eliminare la prenotazione.", () => closeConfirm(), "warning");
+        }
       }
-    } catch (e) {
-      console.error(e);
-      alert("Errore di rete.");
-    }
+    );
   };
 
   // Fetch bookings when active tab is 'bookings'
@@ -383,51 +409,70 @@ export default function CreatorStudio({
   };
 
   const handleDeleteClick = async (id: string) => {
-    if (!window.confirm("Sei sicuro di voler eliminare definitivamente questo post?")) {
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/posts/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        onRefreshPosts();
-      } else {
-        let errMsg = "Errore durante l'eliminazione del post.";
+    showConfirm(
+      "Elimina Post",
+      "Sei sicuro di voler eliminare definitivamente questo post? L'operazione non può essere annullata.",
+      async () => {
+        closeConfirm();
         try {
-          const errData = await res.json();
-          errMsg = errData.error || errMsg;
-        } catch (_) {}
-        alert(`Errore (${res.status}): ${errMsg}`);
-        console.error("Delete post fallito:", res.status, errMsg);
+          const res = await fetch(`/api/posts/${id}`, { method: "DELETE" });
+          if (res.ok) {
+            onRefreshPosts();
+          } else {
+            let errMsg = "Errore durante l'eliminazione del post.";
+            try { const errData = await res.json(); errMsg = errData.error || errMsg; } catch (_) {}
+            showConfirm("Errore", `${errMsg}`, () => closeConfirm(), "warning");
+          }
+        } catch (err) {
+          showConfirm("Errore di rete", "Impossibile eliminare il post. Controlla la connessione.", () => closeConfirm(), "warning");
+        }
       }
-    } catch (err) {
-      console.error("Errore eliminazione post:", err);
-      alert("Errore di rete durante l'eliminazione. Controlla la connessione e riprova.");
-    }
+    );
   };
 
   const handleResetStats = async () => {
-    if (!window.confirm("Sei sicuro di voler azzerare tutte le statistiche di click?")) {
-      return;
-    }
-
-    try {
-      const res = await fetch("/api/posts/reset-clicks", { method: "POST" });
-      if (res.ok) {
-        onRefreshPosts();
-      } else {
-        let errMsg = "Errore durante l'azzeramento delle statistiche.";
+    showConfirm(
+      "Azzera Statistiche",
+      "Sei sicuro di voler azzerare tutti i contatori di click? I dati andranno persi definitivamente.",
+      async () => {
+        closeConfirm();
         try {
-          const errData = await res.json();
-          errMsg = errData.error || errMsg;
-        } catch (_) {}
-        alert(`Errore (${res.status}): ${errMsg}`);
-        console.error("Reset stats fallito:", res.status, errMsg);
+          const res = await fetch("/api/posts/reset-clicks", { method: "POST" });
+          if (res.ok) {
+            onRefreshPosts();
+          } else {
+            let errMsg = "Errore durante l'azzeramento delle statistiche.";
+            try { const errData = await res.json(); errMsg = errData.error || errMsg; } catch (_) {}
+            showConfirm("Errore", errMsg, () => closeConfirm(), "warning");
+          }
+        } catch (e) {
+          showConfirm("Errore di rete", "Impossibile azzerare le statistiche.", () => closeConfirm(), "warning");
+        }
       }
-    } catch (e) {
-      console.error("Errore reset statistiche:", e);
-      alert("Errore di rete durante il reset statistiche.");
-    }
+    );
+  };
+
+  const handleClearDemo = async () => {
+    showConfirm(
+      "Pulisci DB Demo",
+      "Questo eliminerà TUTTI i post (inclusi quelli dimostrativi) e resetterà il database. Continuare?",
+      async () => {
+        closeConfirm();
+        try {
+          const res = await fetch("/api/posts/clear-demo", { method: "POST" });
+          if (res.ok) {
+            onRefreshPosts();
+          } else {
+            let errMsg = "Errore nel reset del DB.";
+            try { const errData = await res.json(); errMsg = errData.error || errMsg; } catch (_) {}
+            showConfirm("Errore", errMsg, () => closeConfirm(), "warning");
+          }
+        } catch (e) {
+          showConfirm("Errore di rete", "Impossibile contattare il server.", () => closeConfirm(), "warning");
+        }
+      },
+      "warning"
+    );
   };
 
   // Save Settings
@@ -602,6 +647,53 @@ export default function CreatorStudio({
   // Authenticated Dashboard Layout
   return (
     <div className="fixed inset-0 z-40 bg-zinc-950 text-zinc-200 flex flex-col">
+
+      {/* ===== CUSTOM CONFIRM MODAL ===== */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden animate-fade-in">
+            {/* Header */}
+            <div className={`px-5 pt-5 pb-3 flex items-start gap-3`}>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                confirmModal.variant === "danger" ? "bg-rose-500/15 text-rose-400" :
+                confirmModal.variant === "warning" ? "bg-amber-500/15 text-amber-400" :
+                "bg-blue-500/15 text-blue-400"
+              }`}>
+                {confirmModal.variant === "danger" ? <Trash2 className="w-5 h-5" /> :
+                 confirmModal.variant === "warning" ? <AlertTriangle className="w-5 h-5" /> :
+                 <AlertCircle className="w-5 h-5" />}
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-black text-zinc-100 uppercase tracking-wider">{confirmModal.title}</h3>
+                <p className="text-xs text-zinc-400 mt-1 leading-relaxed">{confirmModal.message}</p>
+              </div>
+              <button onClick={closeConfirm} className="text-zinc-600 hover:text-zinc-400 transition-colors p-1 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {/* Actions */}
+            <div className="px-5 pb-5 pt-2 flex gap-2">
+              <button
+                onClick={closeConfirm}
+                className="flex-1 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={confirmModal.onConfirm}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                  confirmModal.variant === "danger" ? "bg-rose-600 hover:bg-rose-500 text-white" :
+                  confirmModal.variant === "warning" ? "bg-amber-500 hover:bg-amber-400 text-black" :
+                  "bg-blue-600 hover:bg-blue-500 text-white"
+                }`}
+              >
+                {confirmModal.variant === "danger" ? "Elimina" : "Conferma"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Creator Top Navbar Header */}
       <div className="w-full bg-zinc-900 border-b border-zinc-800/80 px-4 py-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -735,6 +827,17 @@ export default function CreatorStudio({
                   <Clock className="w-4 h-4 text-fuchsia-400" />
                   <span>Elenco dei Post nel Feed</span>
                 </h2>
+                {posts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearDemo}
+                    className="text-[9px] uppercase tracking-wider px-2 py-1 bg-zinc-900 hover:bg-rose-950/40 border border-zinc-800 hover:border-rose-800/60 text-zinc-500 hover:text-rose-400 rounded transition-all cursor-pointer shadow-sm active:scale-95 flex items-center gap-1"
+                    title="Elimina tutti i post (inclusi demo)"
+                  >
+                    <Trash2 className="w-2.5 h-2.5" />
+                    Pulisci tutto
+                  </button>
+                )}
               </div>
 
               {posts.length === 0 ? (
