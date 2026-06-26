@@ -490,7 +490,7 @@ app.put("/api/posts/:id", async (req, res) => {
   res.json(updatedPost);
 });
 
-// API: Upload file to Vercel Blob
+// API: Upload file — uses Vercel Blob on Vercel, local disk on localhost
 app.post("/api/upload", async (req, res) => {
   try {
     const { filename, fileData, mimeType } = req.body;
@@ -498,35 +498,56 @@ app.post("/api/upload", async (req, res) => {
       return res.status(400).json({ error: "Nome file e dati file (base64 o data URL) sono obbligatori." });
     }
 
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (!token || token.startsWith("vercel_blob_rw_...")) {
-      return res.status(500).json({ 
-        error: "BLOB_READ_WRITE_TOKEN non configurato nel file .env. Impossibile caricare su Vercel Blob." 
-      });
-    }
-
-    // Convert Base64 back to buffer
+    // Decode Base64
     let buffer: Buffer;
     if (fileData.startsWith("data:")) {
-      const base64Data = fileData.split(",")[1];
-      buffer = Buffer.from(base64Data, "base64");
+      buffer = Buffer.from(fileData.split(",")[1], "base64");
     } else {
       buffer = Buffer.from(fileData, "base64");
     }
 
-    console.log(`[Upload] Caricamento file ${filename} (${buffer.length} byte) su Vercel Blob...`);
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    const hasBlob = !!(token && !token.startsWith("vercel_blob_rw_..."));
 
-    const blob = await put(filename, buffer, {
-      access: "public",
-      contentType: mimeType,
-      addRandomSuffix: true, // Allow uploading identical files by generating unique names
-      token
-    });
+    if (IS_VERCEL) {
+      // === VERCEL: must use Blob ===
+      if (!hasBlob) {
+        return res.status(500).json({ error: "BLOB_READ_WRITE_TOKEN non configurato su Vercel. Impossibile caricare file." });
+      }
+      const blob = await put(filename, buffer, {
+        access: "public",
+        contentType: mimeType,
+        addRandomSuffix: true,
+        token: token!
+      });
+      console.log(`[Upload] File caricato su Vercel Blob. URL: ${blob.url}`);
+      return res.json({ url: blob.url });
+    } else {
+      // === LOCALHOST: save to local assets/uploads/ ===
+      const uploadsDir = path.join(process.cwd(), "assets", "uploads");
+      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-    console.log(`[Upload] File caricato con successo. URL: ${blob.url}`);
-    res.json({ url: blob.url });
+      // Build a unique filename with timestamp suffix
+      const ext = path.extname(filename) || "";
+      const base = path.basename(filename, ext).replace(/[^a-zA-Z0-9_-]/g, "_");
+      const uniqueName = `${base}-${Date.now()}${ext}`;
+      const filePath = path.join(uploadsDir, uniqueName);
+      fs.writeFileSync(filePath, buffer);
+
+      const fileUrl = `/assets/uploads/${uniqueName}`;
+      console.log(`[Upload] File salvato in locale: ${filePath} → URL: ${fileUrl}`);
+
+      // Optional async Blob sync (non-blocking)
+      if (hasBlob) {
+        put(`uploads/${uniqueName}`, buffer, { access: "public", contentType: mimeType, token: token! })
+          .then(b => console.log(`[Upload] Sync Blob completato: ${b.url}`))
+          .catch(err => console.warn("[Upload] Sync Blob fallito (non critico):", err.message));
+      }
+
+      return res.json({ url: fileUrl });
+    }
   } catch (err: any) {
-    console.error("[Upload] Errore durante il caricamento su Vercel Blob:", err);
+    console.error("[Upload] Errore caricamento:", err);
     res.status(500).json({ error: "Errore durante il caricamento del file: " + err.message });
   }
 });
@@ -828,6 +849,13 @@ app.post("/api/bookings", async (req, res) => {
 
 // Configure Vite middleware or serve static assets
 async function start() {
+  // Serve locally-uploaded files at /assets/uploads/* (dev only, Vercel uses Blob URLs)
+  const uploadsDir = path.join(process.cwd(), "assets", "uploads");
+  if (!IS_VERCEL) {
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+    app.use("/assets/uploads", express.static(uploadsDir));
+  }
+
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
