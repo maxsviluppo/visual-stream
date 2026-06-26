@@ -1,0 +1,6 @@
+{
+  "name": "Visual Stream",
+  "description": "A micro-gallery and vertical visual stream designed for mobile to share new products, promotions, or updates instantly from WhatsApp without preview limits.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
