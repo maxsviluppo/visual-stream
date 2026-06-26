@@ -319,10 +319,11 @@ export default function App() {
               <Calendar className="w-8 h-8 text-fuchsia-400" />
             </div>
             <div className="space-y-2">
-              <h3 className="text-lg font-light tracking-wide text-white uppercase">Vetrina Vuota</h3>
+              <h3 className="text-lg font-light tracking-wide text-white uppercase">Arrivano a breve</h3>
               <p className="text-xs text-white/50 max-w-xs mx-auto leading-relaxed">
-                Nessun contenuto caricato per ora. Accedi al Creator Studio per aggiungere splendidi video verticali o foto per la tua landing page.
+                Stiamo preparando i nuovi fantastici contenuti. Torna a trovarci presto!
               </p>
+
             </div>
             <button
               id="empty-state-open-studio"

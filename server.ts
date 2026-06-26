@@ -658,22 +658,33 @@ async function start() {
     console.log("Production static server configured.");
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-    
-    // Perform initial cleanup and start 1-minute interval for automatic deletions
+  if (!process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+      
+      // Perform initial cleanup and start 1-minute interval for automatic deletions
+      cleanupExpiredBookings();
+      setInterval(cleanupExpiredBookings, 60000);
+      console.log("[Auto-Cleanup] Servizio di pulizia automatica prenotazioni attivato (frequenza: 60s).");
+      
+      // Perform initial Vercel Blob cleanup and start 15-minute interval for automatic deletions
+      cleanupExpiredBlobs();
+      setInterval(cleanupExpiredBlobs, 15 * 60 * 1000);
+      console.log("[Blob-Cleanup] Servizio di pulizia automatica blob attivato (frequenza: 15m).");
+    });
+  } else {
+    // Initialize cleanup tasks on Vercel startup (note: serverless environments have ephemeral execution,
+    // so scheduling checks on request or using Vercel Cron is recommended, but we keep the intervals for compatibility)
     cleanupExpiredBookings();
     setInterval(cleanupExpiredBookings, 60000);
-    console.log("[Auto-Cleanup] Servizio di pulizia automatica prenotazioni attivato (frequenza: 60s).");
-    
-    // Perform initial Vercel Blob cleanup and start 15-minute interval for automatic deletions
     cleanupExpiredBlobs();
     setInterval(cleanupExpiredBlobs, 15 * 60 * 1000);
-    console.log("[Blob-Cleanup] Servizio di pulizia automatica blob attivato (frequenza: 15m).");
-  });
-
+    console.log("[Vercel] Serverless functions started, cleanup intervals registered.");
+  }
 }
 
 start().catch(err => {
   console.error("Failed to start server:", err);
 });
+
+export default app;
