@@ -1,12 +1,12 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
 import { put, del, list } from "@vercel/blob";
 
 dotenv.config();
+
 
 
 const app = express();
@@ -643,12 +643,14 @@ app.post("/api/bookings", async (req, res) => {
 // Configure Vite middleware or serve static assets
 async function start() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
     console.log("Vite development server middleware loaded.");
+
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
