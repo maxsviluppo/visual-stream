@@ -397,6 +397,24 @@ export default function CreatorStudio({
     }
   };
 
+  const handleResetStats = async () => {
+    if (!window.confirm("Sei sicuro di voler azzerare tutte le statistiche di click?")) {
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/posts/reset-clicks", { method: "POST" });
+      if (res.ok) {
+        onRefreshPosts();
+      } else {
+        alert("Errore durante l'azzeramento delle statistiche.");
+      }
+    } catch (e) {
+      console.error("Errore reset statistiche:", e);
+      alert("Errore di rete.");
+    }
+  };
+
   // Save Settings
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
@@ -419,7 +437,12 @@ export default function CreatorStudio({
       >
         <button 
           id="exit-pin-screen"
-          onClick={onClose}
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }}
           className="absolute top-6 left-6 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-400 hover:text-zinc-200 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -671,8 +694,18 @@ export default function CreatorStudio({
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl border border-zinc-900 bg-zinc-900/30 flex flex-col justify-between">
-                <span className="text-[10px] text-fuchsia-400 font-bold uppercase tracking-wider">Click Totali</span>
+              <div className="p-4 rounded-xl border border-zinc-900 bg-zinc-900/30 flex flex-col justify-between relative">
+                <div className="flex justify-between items-start">
+                  <span className="text-[10px] text-fuchsia-400 font-bold uppercase tracking-wider">Click Totali</span>
+                  <button
+                    type="button"
+                    onClick={handleResetStats}
+                    className="text-[9px] uppercase tracking-wider px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 rounded transition-all cursor-pointer shadow-sm active:scale-95"
+                    title="Azzera statistiche click"
+                  >
+                    Azzera
+                  </button>
+                </div>
                 <div className="flex items-baseline gap-2 mt-2">
                   <span className="text-2xl font-black text-fuchsia-400">{totalClicks}</span>
                   <span className="text-[10px] text-zinc-500">su WhatsApp</span>

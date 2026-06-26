@@ -201,57 +201,7 @@ async function cleanupExpiredBookings() {
 
 // Background job to clean up blobs older than 48 hours
 async function cleanupExpiredBlobs() {
-  try {
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (!token || token.startsWith("vercel_blob_rw_...")) {
-      console.log("[Blob-Cleanup] BLOB_READ_WRITE_TOKEN non configurato o non valido. Salto la pulizia dei blob.");
-      return;
-    }
-
-    console.log("[Blob-Cleanup] Avvio della pulizia automatica dei blob...");
-    const { blobs } = await list({ token });
-    const now = new Date();
-    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-
-    let deletedCount = 0;
-    const posts = readPosts();
-    let postsChanged = false;
-
-    for (const blob of blobs) {
-      const uploadedAt = new Date(blob.uploadedAt);
-      if (uploadedAt < fortyEightHoursAgo) {
-        console.log(`[Blob-Cleanup] Rilevato blob scaduto (>48h): ${blob.url} (caricato il: ${blob.uploadedAt})`);
-        try {
-          await del(blob.url, { token });
-          deletedCount++;
-
-          // Remove the post referencing this blob (or we can just keep the post but set mediaUrl empty/delete it)
-          // The instruction says "dopo 48 ore elimina il file archiviato in automatico, no tutti i file solo quello archiviato 48 ore prima."
-          // Deleting the post entirely is cleaner since without the file the post has no media.
-          const postIndex = posts.findIndex(p => p.mediaUrl === blob.url);
-          if (postIndex !== -1) {
-            console.log(`[Blob-Cleanup] Rimozione del post '${posts[postIndex].title}' (${posts[postIndex].id}) associato al blob eliminato.`);
-            posts.splice(postIndex, 1);
-            postsChanged = true;
-          }
-        } catch (delErr) {
-          console.error(`[Blob-Cleanup] Errore durante l'eliminazione del blob ${blob.url}:`, delErr);
-        }
-      }
-    }
-
-    if (deletedCount > 0) {
-      console.log(`[Blob-Cleanup] Rimossi con successo ${deletedCount} blob scaduti.`);
-    } else {
-      console.log("[Blob-Cleanup] Nessun blob scaduto rilevato.");
-    }
-
-    if (postsChanged) {
-      writePosts(posts);
-    }
-  } catch (error) {
-    console.error("[Blob-Cleanup] Errore durante la pulizia automatica dei blob:", error);
-  }
+  console.log("[Blob-Cleanup] Pulizia automatica dei blob disattivata (cancellazione solo manuale).");
 }
 
 
@@ -556,6 +506,16 @@ app.post("/api/posts/:id/click", async (req, res) => {
   }
   
   res.status(404).json({ error: "Post non trovato." });
+});
+
+// API: Reset all post click counts (statistics)
+app.post("/api/posts/reset-clicks", async (req, res) => {
+  const posts = await readPosts();
+  posts.forEach(p => {
+    p.clickCount = 0;
+  });
+  await writePosts(posts);
+  res.json({ success: true, message: "Statistiche azzerate con successo." });
 });
 
 // API: Get settings

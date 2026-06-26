@@ -384,7 +384,6 @@ export default function App() {
                       }
                     }
                   }}
-                  onTap={(e) => openBookingModal(e as any, posts[activeSlideIndex])}
                   className="absolute inset-0 w-full h-full flex flex-col justify-between overflow-hidden cursor-grab active:cursor-grabbing"
                 >
                   {/* FULLSCREEN BACKGROUND 9:16 PORTRAIT MEDIA */}
@@ -428,7 +427,7 @@ export default function App() {
                     </div>
 
                     {/* Booking Prompt Information bar */}
-                    <div className="pointer-events-auto w-[85%] mx-auto" onClick={(e) => e.stopPropagation()}>
+                    <div className="pointer-events-auto w-[85%] mx-auto mb-[50px]" onClick={(e) => e.stopPropagation()}>
                       {/* Text reservation button (no icon) */}
                       <div className="relative w-full">
                         <div className="absolute inset-0 rounded-full bg-fuchsia-500/25 blur-md animate-pulse"></div>
@@ -554,7 +553,7 @@ export default function App() {
                       required
                       value={bookingDate}
                       onChange={(e) => setBookingDate(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 bg-zinc-900 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-fuchsia-500 transition-colors cursor-pointer"
+                      className="w-full pl-11 pr-4 py-3 bg-zinc-900 border border-white/10 rounded-xl text-white text-base focus:outline-none focus:border-fuchsia-500 transition-colors cursor-pointer"
                     />
                     <div className="absolute left-4 top-3.5 text-white/40">
                       <Calendar className="w-4 h-4" />
@@ -572,7 +571,7 @@ export default function App() {
                       placeholder="es. Massimo Castro"
                       value={bookingName}
                       onChange={(e) => setBookingName(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 bg-zinc-900 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-fuchsia-500 transition-colors"
+                      className="w-full pl-11 pr-4 py-3 bg-zinc-900 border border-white/10 rounded-xl text-white text-base focus:outline-none focus:border-fuchsia-500 transition-colors"
                     />
                     <div className="absolute left-4 top-3.5 text-white/40">
                       <User className="w-4 h-4" />
@@ -617,7 +616,7 @@ export default function App() {
                         placeholder="es. 333 1234567"
                         value={bookingPhone}
                         onChange={(e) => setBookingPhone(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-zinc-900 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-fuchsia-500 transition-colors font-mono"
+                        className="w-full pl-10 pr-4 py-3 bg-zinc-900 border border-white/10 rounded-xl text-white text-base focus:outline-none focus:border-fuchsia-500 transition-colors font-mono"
                       />
                       <div className="absolute left-3.5 top-3.5 text-white/40">
                         <Phone className="w-3.5 h-3.5" />
